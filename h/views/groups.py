@@ -161,7 +161,7 @@ def read_noslug(group, request):
 
 @view_config(route_name='group_read',
              request_method='POST',
-             effective_principals=security.Authenticated)
+             permission='join')
 def join(group, request):
     groups_service = request.find_service(name='groups')
     groups_service.member_join(group, request.authenticated_userid)
