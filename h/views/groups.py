@@ -3,7 +3,7 @@
 import deform
 from pyramid import security
 from pyramid.httpexceptions import (HTTPMovedPermanently, HTTPNoContent,
-                                    HTTPSeeOther)
+                                    HTTPNotFound, HTTPSeeOther)
 from pyramid.view import view_config, view_defaults
 
 from h import form
@@ -121,6 +121,8 @@ def read(group, request):
     # 'read' permission on the group. In this case, we show them the join
     # page.
     if not request.has_permission('read'):
+        if not request.has_permission('join'):
+            raise HTTPNotFound()
         request.override_renderer = 'h:templates/groups/join.html.jinja2'
         return {'group': group}
 

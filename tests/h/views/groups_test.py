@@ -4,10 +4,11 @@ import deform
 import mock
 import pytest
 from pyramid.httpexceptions import (HTTPMovedPermanently, HTTPNoContent,
-                                    HTTPSeeOther)
+                                    HTTPNotFound, HTTPSeeOther)
 
 from h.views import groups as views
 from h.models import (Group, User)
+from h.models.group import JoinableBy
 
 
 @pytest.mark.usefixtures('groups_service', 'handle_form_submission', 'routes')
@@ -194,10 +195,17 @@ class TestGroupRead(object):
         assert result['group'] == group
         assert result['document_links'] == ['link1', 'link2']
 
-    def test_renders_join_template_if_not_member(self,
-                                                 pyramid_config,
-                                                 pyramid_request):
+    def test_renders_join_template_if_not_member_but_joinable(self,
+                                                              pyramid_config,
+                                                              pyramid_request):
         group = FakeGroup('abc123', 'some-slug')
+
+        def fake_has_permission(type_):
+            if type_ == 'read':
+                return False
+            if type_ == 'join':
+                return True
+        pyramid_request.has_permission = mock.Mock(side_effect=fake_has_permission)
         pyramid_config.testing_securitypolicy('bohus', permissive=False)
         pyramid_request.matchdict['slug'] = 'some-slug'
 
@@ -205,6 +213,23 @@ class TestGroupRead(object):
 
         assert 'join.html' in pyramid_request.override_renderer
         assert result == {'group': group}
+
+    def test_renders_not_found_when_not_member_and_not_joinable(self,
+                                                                pyramid_config,
+                                                                pyramid_request):
+        group = FakeGroup('abc123', 'some-slug')
+
+        def fake_has_permission(type_):
+            if type_ == 'read':
+                return False
+            if type_ == 'join':
+                return False
+        pyramid_request.has_permission = mock.Mock(side_effect=fake_has_permission)
+        pyramid_config.testing_securitypolicy('bohus', permissive=False)
+        pyramid_request.matchdict['slug'] = 'some-slug'
+
+        with pytest.raises(HTTPNotFound):
+            views.read(group, pyramid_request)
 
 
 @pytest.mark.usefixtures('routes')
@@ -281,9 +306,10 @@ class TestGroupLeave(object):
 
 
 class FakeGroup(object):
-    def __init__(self, pubid, slug):
+    def __init__(self, pubid, slug, joinable_by=JoinableBy.authority):
         self.pubid = pubid
         self.slug = slug
+        self.joinable_by = joinable_by
 
 
 class FakeGroupsService(object):
