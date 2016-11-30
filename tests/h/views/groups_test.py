@@ -251,6 +251,13 @@ class TestGroupReadUnauthenticated(object):
 
         assert result == {'group': group}
 
+    def test_it_renders_not_found_when_group_is_not_joinable(self, pyramid_request):
+        group = FakeGroup('abc123', 'some-slug', joinable_by=None)
+        pyramid_request.matchdict['slug'] = 'some-slug'
+
+        with pytest.raises(HTTPNotFound):
+            views.read_unauthenticated(group, pyramid_request)
+
 
 @pytest.mark.usefixtures('routes')
 def test_read_noslug_redirects(pyramid_request):

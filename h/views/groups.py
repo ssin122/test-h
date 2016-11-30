@@ -147,6 +147,9 @@ def read(group, request):
              renderer='h:templates/groups/join.html.jinja2')
 def read_unauthenticated(group, request):
     """Group view for logged-out users, allowing them to join the group."""
+    if group.joinable_by is None:
+        raise HTTPNotFound()
+
     _check_slug(group, request)
     return {'group': group}
 
