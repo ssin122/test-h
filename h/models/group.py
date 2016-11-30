@@ -128,11 +128,19 @@ class Group(Base, mixins.Timestamps):
         return documents
 
     def __acl__(self):
-        return [
+        acl = [
             (security.Allow, 'group:{}'.format(self.pubid), 'read'),
             (security.Allow, self.creator.userid, 'admin'),
-            security.DENY_ALL,
         ]
+
+        if self.joinable_by == JoinableBy.authority:
+            acl.append((security.Allow,
+                        'authority:{}'.format(self.authority),
+                        'join'))
+
+        acl.append(security.DENY_ALL)
+
+        return acl
 
     def __repr__(self):
         return '<Group: %s>' % self.slug

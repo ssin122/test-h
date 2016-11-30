@@ -5,6 +5,7 @@ from pyramid import security
 
 import memex
 from h import models
+from h.models.group import JoinableBy
 
 
 def test_init(db_session, factories):
@@ -162,6 +163,20 @@ def test_acl(group, factories):
     assert group.__acl__() == [
         (security.Allow, 'group:testing-pubid', 'read'),
         (security.Allow, 'acct:luke@foobar.org', 'admin'),
+        security.DENY_ALL,
+    ]
+
+
+def test_acl_joinable_by_authority(group, factories):
+    group.authority = 'foobar.org'
+    group.joinable_by = JoinableBy.authority
+    group.pubid = 'testing-pubid'
+    group.creator = factories.User(username='luke', authority='foobar.org')
+
+    assert group.__acl__() == [
+        (security.Allow, 'group:testing-pubid', 'read'),
+        (security.Allow, 'acct:luke@foobar.org', 'admin'),
+        (security.Allow, 'authority:foobar.org', 'join'),
         security.DENY_ALL,
     ]
 
