@@ -108,10 +108,10 @@ class GroupSearchController(SearchController):
         except exc.NoResultFound:
             return result
 
-        result['opts']['search_groupname'] = group.name
-
-        if self.request.authenticated_user not in group.members:
+        if not self.request.has_permission('read', group):
             return result
+
+        result['opts']['search_groupname'] = group.name
 
         def user_annotation_count(aggregation, userid):
             for user in aggregation:

@@ -175,14 +175,17 @@ class TestGroupSearchController(object):
             self, controller, factories, pyramid_request, search):
         pyramid_request.authenticated_user = factories.User()
 
+        def fake_has_permission(type_, context):
+            return False
+        pyramid_request.has_permission = mock.Mock(side_effect=fake_has_permission)
+
         assert controller.search() == search.return_value
 
-    def test_search_returns_group_info_if_user_a_member_of_group(self,
-                                                                 controller,
-                                                                 group,
-                                                                 pyramid_request):
-        pyramid_request.authenticated_user = group.members[-1]
-
+    @pytest.mark.usefixtures('group_read_access')
+    def test_search_returns_group_info_if_user_has_read_access(self,
+                                                               controller,
+                                                               group,
+                                                               pyramid_request):
         group_info = controller.search()['group']
 
         assert group_info['created'] == group.created.strftime('%B, %Y')
@@ -190,19 +193,20 @@ class TestGroupSearchController(object):
         assert group_info['name'] == group.name
         assert group_info['pubid'] == group.pubid
 
+    @pytest.mark.usefixtures('group_read_access')
     def test_search_checks_whether_the_user_has_admin_permission_on_the_group(
             self, controller, group, pyramid_request):
         pyramid_request.authenticated_user = group.members[-1]
 
         controller.search()
 
-        pyramid_request.has_permission.assert_called_once_with('admin', group)
+        assert mock.call('admin', group) in pyramid_request.has_permission.call_args_list
 
-    def test_search_does_not_show_the_edit_link_to_group_members(self,
-                                                                 controller,
-                                                                 group,
-                                                                 pyramid_request):
-        pyramid_request.has_permission = mock.Mock(return_value=False)
+    @pytest.mark.usefixtures('group_read_access')
+    def test_search_does_not_show_the_edit_link_to_non_admins(self,
+                                                              controller,
+                                                              group,
+                                                              pyramid_request):
         pyramid_request.authenticated_user = group.members[-1]
 
         result = controller.search()
@@ -213,13 +217,19 @@ class TestGroupSearchController(object):
                                                                     controller,
                                                                     group,
                                                                     pyramid_request):
-        pyramid_request.has_permission = mock.Mock(return_value=True)
         pyramid_request.authenticated_user = group.creator
+
+        def fake_has_permission(type_, context):
+            if type_ == 'read' or type_ == 'admin':
+                return True
+            return False
+        pyramid_request.has_permission = mock.Mock(side_effect=fake_has_permission)
 
         result = controller.search()
 
         assert 'group_edit_url' in result
 
+    @pytest.mark.usefixtures('group_read_access')
     def test_search_shows_the_more_info_version_of_the_page_if_more_info_is_in_the_request_params(
             self,
             controller,
@@ -230,6 +240,7 @@ class TestGroupSearchController(object):
 
         assert controller.search()['more_info'] is True
 
+    @pytest.mark.usefixtures('group_read_access')
     def test_search_shows_the_normal_version_of_the_page_if_more_info_is_not_in_the_request_params(
             self,
             controller,
@@ -239,6 +250,7 @@ class TestGroupSearchController(object):
 
         assert controller.search()['more_info'] is False
 
+    @pytest.mark.usefixtures('group_read_access')
     def test_search_returns_name_in_opts(self,
                                          controller,
                                          group,
@@ -257,11 +269,11 @@ class TestGroupSearchController(object):
 
         assert result['opts']['search_groupname'] == 'does_not_exist'
 
+    @pytest.mark.usefixtures('group_read_access')
     def test_search_returns_group_members_usernames(self,
                                                     controller,
                                                     pyramid_request,
                                                     group):
-        pyramid_request.has_permission = mock.Mock(return_value=False)
         pyramid_request.authenticated_user = group.members[-1]
 
         result = controller.search()
@@ -270,11 +282,11 @@ class TestGroupSearchController(object):
         expected = set([m.username for m in group.members])
         assert actual == expected
 
+    @pytest.mark.usefixtures('group_read_access')
     def test_search_returns_group_members_userid(self,
                                                  controller,
                                                  pyramid_request,
                                                  group):
-        pyramid_request.has_permission = mock.Mock(return_value=False)
         pyramid_request.authenticated_user = group.members[-1]
 
         result = controller.search()
@@ -283,11 +295,11 @@ class TestGroupSearchController(object):
         expected = set([m.userid for m in group.members])
         assert actual == expected
 
+    @pytest.mark.usefixtures('group_read_access')
     def test_search_returns_group_members_faceted_by(self,
                                                      controller,
                                                      pyramid_request,
                                                      group):
-        pyramid_request.has_permission = mock.Mock(return_value=False)
         pyramid_request.authenticated_user = group.members[-1]
 
         faceted_user = group.members[0]
@@ -298,6 +310,7 @@ class TestGroupSearchController(object):
         for member in result['group']['members']:
             assert member['faceted_by'] is (member['userid'] == faceted_user.userid)
 
+    @pytest.mark.usefixtures('group_read_access')
     def test_search_returns_annotation_count_for_group_members(self,
                                                                controller,
                                                                pyramid_request,
@@ -307,8 +320,6 @@ class TestGroupSearchController(object):
         user_1 = factories.User()
         user_2 = factories.User()
         group.members = [user_1, user_2]
-
-        pyramid_request.has_permission = mock.Mock(return_value=False)
         pyramid_request.authenticated_user = group.members[-1]
 
         counts = {user_1.userid: 24, user_2.userid: 6}
@@ -334,6 +345,7 @@ class TestGroupSearchController(object):
 
         assert result['zero_message'] == 'No annotations matched your search.'
 
+    @pytest.mark.usefixtures('group_read_access')
     def test_search_returns_the_group_zero_message_to_the_template(
             self, controller, group, pyramid_request, search):
         """If the query is empty it overrides the default zero message."""
@@ -470,6 +482,14 @@ class TestGroupSearchController(object):
     def toggle_user_facet_request(self, group, pyramid_request):
         pyramid_request.POST['toggle_user_facet'] = 'acct:fred@hypothes.is'
         return pyramid_request
+
+    @pytest.fixture
+    def group_read_access(self, group, pyramid_request):
+        def fake_has_permission(type_, context):
+            if type_ == 'read':
+                return True
+            return False
+        pyramid_request.has_permission = mock.Mock(side_effect=fake_has_permission)
 
 
 @pytest.mark.usefixtures('routes', 'search')
