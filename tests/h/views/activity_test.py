@@ -335,6 +335,32 @@ class TestGroupSearchController(object):
         for member in result['group']['members']:
             assert member['count'] == counts[member['userid']]
 
+    def test_search_skips_leave_link_when_join_permission_missing(
+            self, pyramid_request, controller):
+        def fake_has_permission(type_, context):
+            if type_ == 'read':
+                return True
+            return False
+        pyramid_request.has_permission = mock.Mock(side_effect=fake_has_permission)
+
+        result = controller.search()
+
+        assert 'include_leave_group_link' not in result
+
+    def test_search_signals_to_include_leave_link_by_join_permission(
+            self, controller, group, pyramid_request):
+        pyramid_request.authenticated_user = group.members[-1]
+
+        def fake_has_permission(type_, context):
+            if type_ == 'read' or type_ == 'join':
+                return True
+            return False
+        pyramid_request.has_permission = mock.Mock(side_effect=fake_has_permission)
+
+        result = controller.search()
+
+        assert result['include_leave_group_link'] is True
+
     def test_search_returns_the_default_zero_message_to_the_template(
             self, controller, group, pyramid_request, search):
         """If there's a non-empty query it uses the default zero message."""

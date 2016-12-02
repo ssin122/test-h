@@ -208,18 +208,20 @@
             </a>
           </li>
         {% endif %}
-        <li>
-          <button class="search-result-sidebar__leave-button js-confirm-submit"
-                  type="submit"
-                  form="search-bar"
-                  formmethod="POST"
-                  formaction="{{ request.path_url }}"
-                  name="group_leave"
-                  value="{{ group.pubid }}"
-                  data-confirm-message="Are you sure you want to leave the group &quot;{{ group.name }}&quot;?">
-              {% trans %}Leave this group{% endtrans %}
-          </button>
-        </li>
+        {% if include_leave_group_link %}
+          <li>
+            <button class="search-result-sidebar__leave-button js-confirm-submit"
+                    type="submit"
+                    form="search-bar"
+                    formmethod="POST"
+                    formaction="{{ request.path_url }}"
+                    name="group_leave"
+                    value="{{ group.pubid }}"
+                    data-confirm-message="Are you sure you want to leave the group &quot;{{ group.name }}&quot;?">
+                {% trans %}Leave this group{% endtrans %}
+            </button>
+          </li>
+        {% endif %}
       </ul>
     </section>
 

@@ -146,6 +146,9 @@ class GroupSearchController(SearchController):
             result['group_edit_url'] = self.request.route_url('group_edit',
                                                               pubid=pubid)
 
+        if self.request.has_permission('join', group):
+            result['include_leave_group_link'] = True
+
         result['more_info'] = 'more_info' in self.request.params
 
         if not result.get('q'):
