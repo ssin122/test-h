@@ -1,8 +1,0 @@
-coffeescript:
-  enabled: false
-jshint:
-  enabled: false
-ruby:
-  enabled: false
-scss:
-  enabled: false
