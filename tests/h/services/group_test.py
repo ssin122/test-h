@@ -12,6 +12,46 @@ from h.services.group import groups_factory
 
 
 class TestGroupService(object):
+    def test_fetch_returns_correct_group(self, db_session, users, factories):
+        # create some groups
+        factories.Group()
+        group = factories.Group()
+
+        svc = GroupService(db_session, users.get)
+        assert svc.fetch(group.pubid) == group
+
+    def test_fetch_returns_none_when_missing(self, db_session, users, factories):
+        # create group
+        factories.Group()
+
+        svc = GroupService(db_session, users.get)
+        assert svc.fetch('bogus') is None
+
+    def test_fetch_caches_fetched_groups(self, db_session, users, factories):
+        group = factories.Group()
+        pubid = group.pubid
+
+        svc = GroupService(db_session, users.get)
+        svc.fetch(group.pubid)
+        db_session.delete(group)
+        db_session.flush()
+        group = svc.fetch(pubid)
+
+        assert group is not None
+        assert group.pubid == pubid
+
+    def test_fetch_flushes_cache_on_session_commit(self, db_session, users, factories):
+        group = factories.Group()
+        pubid = group.pubid
+
+        svc = GroupService(db_session, users.get)
+        svc.fetch(pubid)
+        db_session.delete(group)
+        db_session.commit()
+        group = svc.fetch(pubid)
+
+        assert group is None
+
     def test_create_returns_group(self, db_session, users):
         svc = GroupService(db_session, users.get)
 

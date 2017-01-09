@@ -38,6 +38,31 @@ class GroupService(object):
         self.user_fetcher = user_fetcher
         self.publish = publish
 
+        # Local cache of fetched groups.
+        self._cache = {}
+
+        # But don't allow the cache to persist after the session is closed.
+        @sa.event.listens_for(session, 'after_commit')
+        @sa.event.listens_for(session, 'after_rollback')
+        def flush_cache(session):
+            self._cache = {}
+
+    def fetch(self, pubid):
+        """
+        Fetch a group by pubid.
+
+        :param pubid: the group's pubid.
+
+        :returns: a user instance, if found
+        :rtype: h.models.User or None
+        """
+        if pubid not in self._cache:
+            self._cache[pubid] = (self.session.query(Group)
+                                      .filter_by(pubid=pubid)
+                                      .one_or_none())
+
+        return self._cache[pubid]
+
     def create(self, name, authority, userid, description=None, type_='private'):
         """
         Create a new group.

@@ -4,8 +4,6 @@ from __future__ import unicode_literals
 
 from pyramid import security
 
-from h import models
-
 
 class WorldGroup(object):
     """
@@ -29,5 +27,5 @@ def fetch_group(request, id_):
     if id_ == '__world__':
         return WorldGroup(request.auth_domain)
 
-    # This should probably use the GroupService with a built-in caching layer.
-    return request.db.query(models.Group).filter_by(pubid=id_).one_or_none()
+    svc = request.find_service(name='group')
+    return svc.fetch(id_)
