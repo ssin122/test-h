@@ -5,7 +5,11 @@ import datetime
 import mock
 import pytest
 
+from pyramid import security
+from pyramid.authorization import ACLAuthorizationPolicy
+
 from memex import models
+from memex import groups
 from memex.presenters import AnnotationBasePresenter
 from memex.presenters import AnnotationJSONPresenter
 from memex.presenters import AnnotationSearchIndexPresenter
@@ -124,6 +128,7 @@ class TestAnnotationJSONPresenter(object):
                         target_selectors=[{'TestSelector': 'foobar'}],
                         references=['referenced-id-1', 'referenced-id-2'],
                         extra={'extra-1': 'foo', 'extra-2': 'bar'})
+        group = groups.DefaultGroupContext('__world__')
 
         document_asdict.return_value = {'foo': 'bar'}
 
@@ -148,7 +153,7 @@ class TestAnnotationJSONPresenter(object):
                     'extra-1': 'foo',
                     'extra-2': 'bar'}
 
-        result = AnnotationJSONPresenter(ann, fake_links_service).asdict()
+        result = AnnotationJSONPresenter(ann, group, fake_links_service).asdict()
 
         assert result == expected
 
@@ -156,7 +161,7 @@ class TestAnnotationJSONPresenter(object):
         ann = mock.Mock(id='the-real-id', extra={'id': 'the-extra-id'})
         document_asdict.return_value = {}
 
-        presented = AnnotationJSONPresenter(ann, fake_links_service).asdict()
+        presented = AnnotationJSONPresenter(ann, None, fake_links_service).asdict()
         assert presented['id'] == 'the-real-id'
 
     def test_asdict_extra_uses_copy_of_extra(self, document_asdict, fake_links_service):
@@ -164,26 +169,44 @@ class TestAnnotationJSONPresenter(object):
         ann = mock.Mock(id='my-id', extra=extra)
         document_asdict.return_value = {}
 
-        presented = AnnotationJSONPresenter(ann, fake_links_service).asdict()
+        AnnotationJSONPresenter(ann, None, fake_links_service).asdict()
 
         # Presenting the annotation shouldn't change the "extra" dict.
         assert extra == {'foo': 'bar'}
 
-    @pytest.mark.parametrize('annotation,action,expected', [
-        (mock.Mock(userid='acct:luke', shared=False), 'read', ['acct:luke']),
-        (mock.Mock(groupid='__world__', shared=True), 'read', ['group:__world__']),
-        (mock.Mock(groupid='lulapalooza', shared=True), 'read', ['group:lulapalooza']),
-        (mock.Mock(userid='acct:luke'), 'admin', ['acct:luke']),
-        (mock.Mock(userid='acct:luke'), 'update', ['acct:luke']),
-        (mock.Mock(userid='acct:luke'), 'delete', ['acct:luke']),
+    @pytest.mark.usefixtures('policy')
+    @pytest.mark.parametrize('annotation,group_readable,action,expected', [
+        (mock.Mock(userid='acct:luke', shared=False), 'world', 'read', ['acct:luke']),
+        (mock.Mock(userid='acct:luke', group='abcde', shared=False), 'members', 'read', ['acct:luke']),
+        (mock.Mock(groupid='__world__', shared=True), 'world', 'read', ['group:__world__']),
+        (mock.Mock(groupid='lulapalooza', shared=True), 'members', 'read', ['group:lulapalooza']),
+        (mock.Mock(groupid='publisher', shared=True), 'world', 'read', ['group:__world__']),
+        (mock.Mock(userid='acct:luke'), None, 'admin', ['acct:luke']),
+        (mock.Mock(userid='acct:luke'), None, 'update', ['acct:luke']),
+        (mock.Mock(userid='acct:luke'), None, 'delete', ['acct:luke']),
         ])
-    def test_permissions(self, annotation, action, expected, fake_links_service):
-        presenter = AnnotationJSONPresenter(annotation, fake_links_service)
+    def test_permissions(self, annotation, group_readable, action, expected, fake_links_service):
+        principals = {
+            'members': (security.Allow, 'group:{}'.format(annotation.groupid), 'read'),
+            'world': (security.Allow, security.Everyone, 'read'),
+            None: security.DENY_ALL,
+        }
+        group = mock.Mock(spec_set=['__acl__'])
+        group.__acl__.return_value = [principals[group_readable]]
+
+        presenter = AnnotationJSONPresenter(annotation, group, fake_links_service)
         assert expected == presenter.permissions[action]
 
     @pytest.fixture
     def document_asdict(self, patch):
         return patch('memex.presenters.DocumentJSONPresenter.asdict')
+
+    @pytest.fixture
+    def policy(self, pyramid_config):
+        """Set up a fake authentication policy with a real ACL authorization policy."""
+        policy = ACLAuthorizationPolicy()
+        pyramid_config.testing_securitypolicy(None)
+        pyramid_config.set_authorization_policy(policy)
 
 
 @pytest.mark.usefixtures('DocumentSearchIndexPresenter')

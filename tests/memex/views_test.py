@@ -5,6 +5,7 @@ import pytest
 
 from pyramid import testing
 
+from memex import groups
 from memex import presenters
 from memex import views
 from memex.schemas import ValidationError
@@ -107,7 +108,7 @@ class TestIndex(object):
         assert links['search']['url'] == host + '/dummy/search'
 
 
-@pytest.mark.usefixtures('links_service', 'search_lib')
+@pytest.mark.usefixtures('groupfinder', 'links_service', 'search_lib')
 class TestSearch(object):
 
     def test_it_searches(self, pyramid_request, search_lib):
@@ -132,14 +133,15 @@ class TestSearch(object):
     def test_it_renders_search_results(self, links_service, pyramid_request, search_run, factories):
         ann1 = factories.Annotation(userid='luke')
         ann2 = factories.Annotation(userid='sarah')
+        group = groups.DefaultGroupContext('__world__')
 
         search_run.return_value = SearchResult(2, [ann1.id, ann2.id], [], {})
 
         expected = {
             'total': 2,
             'rows': [
-                presenters.AnnotationJSONPresenter(ann1, links_service).asdict(),
-                presenters.AnnotationJSONPresenter(ann2, links_service).asdict(),
+                presenters.AnnotationJSONPresenter(ann1, group, links_service).asdict(),
+                presenters.AnnotationJSONPresenter(ann2, group, links_service).asdict(),
             ]
         }
 
@@ -158,6 +160,7 @@ class TestSearch(object):
         ann = factories.Annotation(userid='luke')
         reply1 = factories.Annotation(userid='sarah', references=[ann.id])
         reply2 = factories.Annotation(userid='sarah', references=[ann.id])
+        group = groups.DefaultGroupContext('__world__')
 
         search_run.return_value = SearchResult(1, [ann.id], [reply1.id, reply2.id], {})
 
@@ -165,10 +168,10 @@ class TestSearch(object):
 
         expected = {
             'total': 1,
-            'rows': [presenters.AnnotationJSONPresenter(ann, links_service).asdict()],
+            'rows': [presenters.AnnotationJSONPresenter(ann, group, links_service).asdict()],
             'replies': [
-                presenters.AnnotationJSONPresenter(reply1, links_service).asdict(),
-                presenters.AnnotationJSONPresenter(reply2, links_service).asdict(),
+                presenters.AnnotationJSONPresenter(reply1, group, links_service).asdict(),
+                presenters.AnnotationJSONPresenter(reply2, group, links_service).asdict(),
             ]
         }
 
@@ -189,6 +192,7 @@ class TestSearch(object):
 
 @pytest.mark.usefixtures('AnnotationEvent',
                          'AnnotationJSONPresenter',
+                         'groupfinder',
                          'links_service',
                          'schemas',
                          'storage')
@@ -247,8 +251,15 @@ class TestCreate(object):
 
         assert exc.value.message == 'asplode'
 
+    def test_it_finds_the_group(self, pyramid_request, groupfinder, storage):
+        views.create(pyramid_request)
+
+        groupid = storage.create_annotation.return_value.groupid
+        groupfinder.assert_called_once_with(pyramid_request, groupid)
+
     def test_it_inits_AnnotationJSONPresenter(self,
                                               AnnotationJSONPresenter,
+                                              groupfinder,
                                               links_service,
                                               pyramid_request,
                                               storage):
@@ -256,6 +267,7 @@ class TestCreate(object):
 
         AnnotationJSONPresenter.assert_called_once_with(
             storage.create_annotation.return_value,
+            groupfinder.return_value,
             links_service)
 
     def test_it_publishes_annotation_event(self,
@@ -303,6 +315,7 @@ class TestRead(object):
         result = views.read(context, pyramid_request)
 
         AnnotationJSONPresenter.assert_called_once_with(context.annotation,
+                                                        context.group,
                                                         links_service)
         assert result == presenter.asdict()
 
@@ -344,6 +357,7 @@ class TestReadJSONLD(object):
 
 @pytest.mark.usefixtures('AnnotationEvent',
                          'AnnotationJSONPresenter',
+                         'groupfinder',
                          'links_service',
                          'schemas',
                          'storage')
@@ -425,15 +439,24 @@ class TestUpdate(object):
         pyramid_request.notify_after_commit.assert_called_once_with(
             AnnotationEvent.return_value)
 
+    def test_it_finds_the_group(self, pyramid_request, groupfinder, storage):
+        views.update(mock.Mock(), pyramid_request)
+
+        updated_annotation = storage.update_annotation.return_value
+
+        groupfinder.assert_called_once_with(pyramid_request, updated_annotation.groupid)
+
     def test_it_inits_a_presenter(self,
                                   AnnotationJSONPresenter,
                                   links_service,
                                   pyramid_request,
-                                  storage):
+                                  storage,
+                                  groupfinder):
         views.update(mock.Mock(), pyramid_request)
 
         AnnotationJSONPresenter.assert_any_call(
             storage.update_annotation.return_value,
+            groupfinder.return_value,
             links_service)
 
     def test_it_dictizes_the_presenter(self,
@@ -530,3 +553,11 @@ def schemas(patch):
 @pytest.fixture
 def storage(patch):
     return patch('memex.views.storage')
+
+
+@pytest.fixture
+def groupfinder(pyramid_config):
+    group = mock.Mock(spec_set=['__acl__'])
+    func = mock.Mock(return_value=group)
+    pyramid_config.registry[groups.GROUPFINDER_KEY] = func
+    return func

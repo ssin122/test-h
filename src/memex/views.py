@@ -24,6 +24,7 @@ from sqlalchemy.orm import subqueryload
 from memex import cors
 from memex import models
 from memex.events import AnnotationEvent
+from memex.groups import find as groupfinder
 from memex.presenters import AnnotationJSONPresenter
 from memex.presenters import AnnotationJSONLDPresenter
 from memex import search as search_lib
@@ -172,8 +173,9 @@ def create(request):
 
     _publish_annotation_event(request, annotation, 'create')
 
+    group = groupfinder(request, annotation.groupid)
     links_service = request.find_service(name='links')
-    presenter = AnnotationJSONPresenter(annotation, links_service)
+    presenter = AnnotationJSONPresenter(annotation, group, links_service)
     return presenter.asdict()
 
 
@@ -183,7 +185,7 @@ def create(request):
 def read(context, request):
     """Return the annotation (simply how it was stored in the database)."""
     links_service = request.find_service(name='links')
-    presenter = AnnotationJSONPresenter(context.annotation, links_service)
+    presenter = AnnotationJSONPresenter(context.annotation, context.group, links_service)
     return presenter.asdict()
 
 
@@ -215,8 +217,9 @@ def update(context, request):
 
     _publish_annotation_event(request, annotation, 'update')
 
+    group = groupfinder(request, annotation.groupid)
     links_service = request.find_service(name='links')
-    presenter = AnnotationJSONPresenter(annotation, links_service)
+    presenter = AnnotationJSONPresenter(annotation, group, links_service)
     return presenter.asdict()
 
 
@@ -260,8 +263,10 @@ def _present_annotations(request, ids):
 
     annotations = storage.fetch_ordered_annotations(request.db, ids,
                                                     query_processor=eager_load_documents)
+    groupids = {a.groupid for a in annotations}
+    groups = dict([(groupid, groupfinder(request, groupid)) for groupid in groupids])
     links_service = request.find_service(name='links')
-    return [AnnotationJSONPresenter(ann, links_service).asdict()
+    return [AnnotationJSONPresenter(ann, groups.get(ann.groupid), links_service).asdict()
             for ann in annotations]
 
 

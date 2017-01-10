@@ -6,6 +6,8 @@ Presenters for API data.
 import collections
 import copy
 
+from pyramid import security
+
 
 class AnnotationBasePresenter(object):
     def __init__(self, annotation, links_service):
@@ -55,6 +57,10 @@ class AnnotationJSONPresenter(AnnotationBasePresenter):
 
     """Present an annotation in the JSON format returned by API requests."""
 
+    def __init__(self, annotation, group, links_service):
+        super(AnnotationJSONPresenter, self).__init__(annotation, links_service)
+        self.group = group
+
     def asdict(self):
         docpresenter = DocumentJSONPresenter(self.annotation.document)
 
@@ -83,7 +89,7 @@ class AnnotationJSONPresenter(AnnotationBasePresenter):
 
     @property
     def permissions(self):
-        return _permissions(self.annotation)
+        return _permissions(self.annotation, self.group)
 
 
 class AnnotationSearchIndexPresenter(AnnotationBasePresenter):
@@ -231,7 +237,7 @@ def _jsonld_id_link(request, annotation):
     return request.route_url('annotation', id=annotation.id)
 
 
-def _permissions(annotation):
+def _permissions(annotation, group=None):
     """
     Return a permissions dict for the given annotation.
 
@@ -242,6 +248,10 @@ def _permissions(annotation):
     read = annotation.userid
     if annotation.shared:
         read = 'group:{}'.format(annotation.groupid)
+
+        group_principals = security.principals_allowed_by_permission(group, 'read')
+        if group is not None and security.Everyone in group_principals:
+            read = 'group:__world__'
 
     return {'read': [read],
             'admin': [annotation.userid],
