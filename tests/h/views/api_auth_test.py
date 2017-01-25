@@ -37,6 +37,7 @@ class TestAccessToken(object):
             'access_token': token.value,
             'token_type': 'bearer',
             'expires_in': TOKEN_TTL.total_seconds(),
+            'refresh_token': token.refresh_token,
         }
 
     @pytest.fixture
